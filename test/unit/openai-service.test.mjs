@@ -107,7 +107,7 @@ test('session planning falls back to local history when conversation-backed resp
   assert.ok(session.history.length >= 4);
   assert.equal(payloads.at(-1).input.at(-2).role, 'assistant');
   assert.equal(payloads.at(-1).input.at(-2).content[0].type, 'output_text');
-  assert.equal(payloads.at(-1).model, DEFAULTS.model);
+  assert.equal(payloads.at(-1).model, DEFAULTS.plannerModel);
   assert.equal(payloads.at(-1).reasoning.summary, 'auto');
 });
 
@@ -148,7 +148,9 @@ test('renderer requests are stateless and return raw HTML text', async () => {
   assert.equal(payloads[0].store, false);
   assert.equal(payloads[0].conversation, undefined);
   assert.equal(payloads[0].text.verbosity, 'low');
-  assert.equal(payloads[0].reasoning.summary, 'auto');
+  assert.equal(payloads[0].reasoning, undefined);
+  assert.equal(payloads[0].max_output_tokens, DEFAULTS.rendererMaxOutputTokens);
+  assert.match(payloads[0].prompt_cache_key, /^vb:/u);
 });
 
 test('renderer requests use the runtime-config scaffolding in their instructions', async () => {

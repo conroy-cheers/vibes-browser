@@ -7,4 +7,6 @@ Server-owned scaffolding notes:
 - Keep the page self-contained and readable without external assets.
 - Give major interactive regions stable ids or data attributes so inline JavaScript has clear hooks.
 - Prefer semantic sections, obvious navigation blocks, and visible calls to action.
+- Use compact DOM structures. Do not pad the page with filler wrappers or repeated promo blocks.
+- Assume the shared shell styling is sufficient. Prefer zero page-level CSS and use a tiny style block only as a last resort.
 - If you include a `<style>` block, treat it as page-scoped refinement for content inside `[data-vb-page="true"]`, not a full-site redesign.

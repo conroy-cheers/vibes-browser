@@ -144,6 +144,113 @@ test('session bootstrap redirects and subsequent page is model-backed', async ()
   await app.close();
 });
 
+test('prefetched GET navigation reuses the warmed page', async () => {
+  const plannerPaths = [];
+  const app = createApp(makeConfig(), {
+    openaiService: {
+      async createSession() {
+        return { conversationId: 'conv-prefetch', mode: 'local', history: [] };
+      },
+      async planSessionResponse(_session, plannerRequest) {
+        plannerPaths.push(plannerRequest.request.path);
+        if (plannerRequest.request.path === '/next') {
+          return {
+            output_text: JSON.stringify(
+              buildPageDecision({
+                page_type: 'next',
+                page_summary: 'A prefetched destination.',
+                title: 'Next page',
+                design_brief: 'Render the warmed destination page.',
+              }),
+            ),
+          };
+        }
+
+        return {
+          output_text: JSON.stringify(
+            buildPageDecision({
+              page_type: 'home',
+              page_summary: 'A home page with one outgoing link.',
+              title: 'Home',
+              design_brief: 'Render a home page with a single next link.',
+              links: [
+                {
+                  href: '/next',
+                  label: 'Next',
+                  description: 'Visit the next page.',
+                },
+              ],
+            }),
+          ),
+        };
+      },
+      async repairSessionPlan() {
+        throw new Error('session repair should not be called');
+      },
+      async renderPage(renderPayload) {
+        if (renderPayload.path === '/next') {
+          return {
+            output_text: buildRenderedPage({
+              html: '<section class="card"><h1>Next page</h1><p>Prefetched content</p></section>',
+            }),
+          };
+        }
+
+        return {
+          output_text: buildRenderedPage({
+            html: '<section class="card"><h1>Home</h1><a href="/next">Next</a></section>',
+          }),
+        };
+      },
+      async repairRenderedPage() {
+        throw new Error('renderer page repair should not be called');
+      },
+    },
+  });
+
+  const address = await app.listen();
+  try {
+    const start = await fetch(
+      `http://127.0.0.1:${address.port}/_session/start`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'phrase=prefetch',
+        redirect: 'manual',
+      },
+    );
+    const cookie = start.headers.get('set-cookie');
+    assert.ok(cookie);
+
+    const home = await fetch(`http://127.0.0.1:${address.port}/`, {
+      headers: { cookie },
+    });
+    assert.equal(home.status, 200);
+
+    const deadline = Date.now() + 1000;
+    while (
+      plannerPaths.filter((pathValue) => pathValue === '/next').length === 0 &&
+      Date.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    const next = await fetch(`http://127.0.0.1:${address.port}/next`, {
+      headers: { cookie },
+    });
+    const html = await next.text();
+
+    assert.equal(next.status, 200);
+    assert.match(html, /Prefetched content/u);
+    assert.equal(
+      plannerPaths.filter((pathValue) => pathValue === '/next').length,
+      1,
+    );
+  } finally {
+    await app.close();
+  }
+});
+
 test('invalid first session plan triggers one repair attempt', async () => {
   let repaired = false;
   const app = createApp(makeConfig(), {
@@ -281,9 +388,12 @@ test('forms are bound to the exact rendered page instance', async () => {
 
   assert.equal(submit.status, 303);
   assert.equal(submit.headers.get('location'), '/thanks');
-  assert.equal(plannerInputs.at(-1).source_page.form.form_id, 'join-form');
+  const signUpPlannerInput = plannerInputs.find(
+    (entry) => entry.request.path === '/sign-up',
+  );
+  assert.equal(signUpPlannerInput.source_page.form.form_id, 'join-form');
   assert.equal(
-    plannerInputs.at(-1).source_page.submission_fields.email,
+    signUpPlannerInput.source_page.submission_fields.email,
     'test@example.com',
   );
   await app.close();

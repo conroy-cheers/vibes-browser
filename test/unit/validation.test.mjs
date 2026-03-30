@@ -150,6 +150,39 @@ test('finalizeRenderedHtml injects form tokens and preserves inline scripts', ()
   assert.match(html, /event\.persisted/u);
 });
 
+test('finalizeRenderedHtml injects fallback inline interactivity when required', () => {
+  const html = finalizeRenderedHtml(
+    '<section class="card"><h1>Directory</h1><p id="status" role="status">Showing verified Jeff roster.</p><form method="GET" action="/directory" data-vb-form-id="directory-search"><input type="search" name="q"><button type="submit">Update</button></form><article data-name="Jeff Example">Jeff Example</article></section>',
+    {
+      title: 'Directory',
+      siteStyleGuide: buildStyleGuide(),
+      forms: [
+        {
+          formId: 'directory-search',
+          method: 'GET',
+          action: '/directory',
+          purpose: 'Filter the directory.',
+          submitLabel: 'Update',
+          fields: [
+            {
+              name: 'q',
+              label: 'Search',
+              type: 'search',
+              required: false,
+              placeholder: 'Jeff',
+            },
+          ],
+        },
+      ],
+      formTokens: { 'directory-search': 'signed-token' },
+      requireInlineScripts: true,
+    },
+  );
+
+  assert.match(html, /history\.replaceState/u);
+  assert.match(html, /name="__vb_page" value="signed-token"/u);
+});
+
 test('finalizeRenderedHtml infers missing data-vb-form-id attributes by action and method', () => {
   const html = finalizeRenderedHtml(
     '<section class="card"><h1>Join</h1><form method="POST" action="/join"><input type="email" name="email"><button type="submit">Join</button></form></section>',
@@ -277,6 +310,21 @@ test('finalizeRenderedHtml scopes page-level style blocks inside the shell', () 
 
   assert.match(html, /\[data-vb-page="true"\] h1/u);
   assert.match(html, /data-vb-shell="header"/u);
+});
+
+test('finalizeRenderedHtml drops malformed page styles instead of failing the page', () => {
+  const html = finalizeRenderedHtml(
+    '<style>.broken { color: red; </style><section class="card"><h1>Scoped</h1><p>Visible text</p></section>',
+    {
+      title: 'Scoped',
+      siteStyleGuide: buildStyleGuide(),
+      forms: [],
+      formTokens: {},
+    },
+  );
+
+  assert.doesNotMatch(html, /\.broken/u);
+  assert.match(html, /Visible text/u);
 });
 
 test('finalizeRenderedHtml rejects page styles that target the outer shell', () => {

@@ -308,11 +308,6 @@ export function finalizeRenderedHtml(html, options = {}) {
   scopePageStyleTags(styleTags);
   const scriptTags = findElements(pageRoot, 'script');
   validateInlineScripts(scriptTags);
-  if (options.requireInlineScripts && scriptTags.length === 0) {
-    throw createValidationError(
-      'Rendered HTML must include at least one inline script tag when JavaScript is required.',
-    );
-  }
   if (!extractText(pageRoot).trim()) {
     throw createValidationError(
       'Rendered page content must contain visible text.',
@@ -327,6 +322,13 @@ export function finalizeRenderedHtml(html, options = {}) {
       declaredForms,
       options.formTokens ?? {},
       pageRoot,
+    );
+  }
+  if (options.requireInlineScripts && scriptTags.length === 0) {
+    appendInlineScript(
+      body,
+      INLINE_INTERACTION_FALLBACK_SNIPPET,
+      'history.replaceState(',
     );
   }
 
@@ -680,12 +682,19 @@ function scopePageStyleTags(styleTags) {
   for (const styleNode of styleTags) {
     const css = extractText(styleNode).trim();
     if (!css) {
-      throw createValidationError(
-        'Rendered HTML style tags must not be empty.',
-      );
+      removeNode(styleNode);
+      continue;
     }
 
-    const root = postcss.parse(css);
+    let root;
+    try {
+      root = postcss.parse(css);
+    } catch {
+      // Page-scoped styles are optional. If the renderer truncates a style tag,
+      // keep the page and drop only the malformed styling block.
+      removeNode(styleNode);
+      continue;
+    }
     root.walkRules((rule) => {
       if (isInsideKeyframes(rule)) {
         return;
@@ -704,6 +713,15 @@ function scopePageStyleTags(styleTags) {
       },
     ];
   }
+}
+
+function removeNode(node) {
+  const siblings = node?.parentNode?.childNodes;
+  if (!Array.isArray(siblings)) {
+    return;
+  }
+
+  node.parentNode.childNodes = siblings.filter((child) => child !== node);
 }
 
 function splitSelectors(selectorText = '') {
@@ -1163,3 +1181,5 @@ export { ALLOWED_CONTENT_TYPES, FORBIDDEN_HEADERS, NO_CACHE_HEADERS };
 
 const PAGESHOW_RELOAD_SNIPPET =
   "window.addEventListener('pageshow',function(event){if(event.persisted){location.reload();}});";
+const INLINE_INTERACTION_FALLBACK_SNIPPET =
+  "(function(){var page=document.querySelector('[data-vb-page=\"true\"]');if(!page)return;var forms=Array.from(page.querySelectorAll('form[data-vb-form-id]'));if(!forms.length)return;var live=page.querySelector('[role=\"status\"],[aria-live]');var items=Array.from(page.querySelectorAll('[role=\"listitem\"],article,[data-name],[data-city],[data-status],[data-tier],[data-amenity]')).filter(function(node){return !forms.some(function(form){return form.contains(node);});});function clean(value){return String(value||'').trim().toLowerCase();}function stateFrom(form){var state={};new FormData(form).forEach(function(value,name){var text=clean(value);if(!text||name==='__vb_page')return;state[name]=text;});return state;}function syncUrl(form,state){if((form.getAttribute('method')||'GET').toUpperCase()!=='GET')return;var action=new URL(form.getAttribute('action')||location.pathname,location.href);if(action.pathname!==location.pathname)return;var params=new URLSearchParams();Object.keys(state).forEach(function(name){params.set(name,state[name]);});var token=form.querySelector('input[name=\"__vb_page\"]');if(token&&token.value)params.set('__vb_page',token.value);action.search=params.toString();history.replaceState(null,'',action);}function refresh(form){var state=stateFrom(form);syncUrl(form,state);if(!items.length){if(live&&Object.keys(state).length)live.textContent='Filters updated.';return;}var shown=0;items.forEach(function(node){var haystack=clean(node.textContent);var dataset=node.dataset||{};Object.keys(dataset).forEach(function(key){haystack+=' '+clean(dataset[key]);});var visible=Object.keys(state).every(function(name){return !state[name]||haystack.indexOf(state[name])>=0;});node.hidden=!visible;if(visible)shown+=1;});if(live)live.textContent=shown+(shown===1?' result shown.':' results shown.');}forms.forEach(function(form){function shouldHandle(){var method=(form.getAttribute('method')||'GET').toUpperCase();var action=new URL(form.getAttribute('action')||location.pathname,location.href);return method==='GET'&&action.pathname===location.pathname;}form.addEventListener('submit',function(event){if(!shouldHandle())return;event.preventDefault();refresh(form);});form.addEventListener('input',function(){if(!shouldHandle())return;refresh(form);});});})();";

@@ -23,12 +23,12 @@ export const SITE_STYLE_GUIDE_SCHEMA = {
     theme_name: {
       type: 'string',
       minLength: 0,
-      maxLength: 80,
+      maxLength: 32,
     },
     visual_summary: {
       type: 'string',
       minLength: 0,
-      maxLength: 400,
+      maxLength: 120,
     },
     palette: {
       type: 'object',
@@ -109,27 +109,27 @@ export const SITE_STYLE_GUIDE_SCHEMA = {
         site_title: {
           type: 'string',
           minLength: 0,
-          maxLength: 120,
+          maxLength: 64,
         },
         tagline: {
           type: 'string',
           minLength: 0,
-          maxLength: 160,
+          maxLength: 72,
         },
         footer_tone: {
           type: 'string',
           minLength: 0,
-          maxLength: 240,
+          maxLength: 72,
         },
       },
     },
     motifs: {
       type: 'array',
-      maxItems: 6,
+      maxItems: 3,
       items: {
         type: 'string',
         minLength: 1,
-        maxLength: 40,
+        maxLength: 16,
       },
     },
   },
@@ -160,38 +160,38 @@ export const SESSION_DECISION_SCHEMA = {
     page_type: {
       type: 'string',
       minLength: 0,
-      maxLength: 80,
+      maxLength: 32,
     },
     page_summary: {
       type: 'string',
       minLength: 0,
-      maxLength: 500,
+      maxLength: 160,
     },
     path_state_summary: {
       type: 'string',
       minLength: 0,
-      maxLength: 500,
+      maxLength: 140,
     },
     title: {
       type: 'string',
       minLength: 0,
-      maxLength: 160,
+      maxLength: 80,
     },
     design_brief: {
       type: 'string',
       minLength: 0,
-      maxLength: 2500,
+      maxLength: 420,
     },
     location: {
       type: 'string',
       minLength: 0,
-      maxLength: 512,
+      maxLength: 256,
       pattern: '^(|\\/(?!\\/)[^\\s]*)$',
     },
     message: {
       type: 'string',
       minLength: 0,
-      maxLength: 500,
+      maxLength: 140,
     },
     links: {
       type: 'array',
@@ -200,16 +200,16 @@ export const SESSION_DECISION_SCHEMA = {
         additionalProperties: false,
         required: ['href', 'label', 'description'],
         properties: {
-          href: { type: 'string', minLength: 1, maxLength: 512 },
-          label: { type: 'string', minLength: 1, maxLength: 120 },
-          description: { type: 'string', minLength: 0, maxLength: 240 },
+          href: { type: 'string', minLength: 1, maxLength: 256 },
+          label: { type: 'string', minLength: 1, maxLength: 56 },
+          description: { type: 'string', minLength: 0, maxLength: 72 },
         },
       },
-      maxItems: 24,
+      maxItems: 6,
     },
     forms: {
       type: 'array',
-      maxItems: 8,
+      maxItems: 2,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -227,19 +227,19 @@ export const SESSION_DECISION_SCHEMA = {
             type: 'string',
             enum: ['GET', 'POST'],
           },
-          action: { type: 'string', minLength: 1, maxLength: 512 },
-          purpose: { type: 'string', minLength: 1, maxLength: 240 },
-          submit_label: { type: 'string', minLength: 1, maxLength: 80 },
+          action: { type: 'string', minLength: 1, maxLength: 256 },
+          purpose: { type: 'string', minLength: 1, maxLength: 96 },
+          submit_label: { type: 'string', minLength: 1, maxLength: 36 },
           fields: {
             type: 'array',
-            maxItems: 12,
+            maxItems: 4,
             items: {
               type: 'object',
               additionalProperties: false,
               required: ['name', 'label', 'type', 'required', 'placeholder'],
               properties: {
                 name: { type: 'string', minLength: 1, maxLength: 80 },
-                label: { type: 'string', minLength: 1, maxLength: 120 },
+                label: { type: 'string', minLength: 1, maxLength: 40 },
                 type: {
                   type: 'string',
                   enum: [
@@ -253,7 +253,7 @@ export const SESSION_DECISION_SCHEMA = {
                   ],
                 },
                 required: { type: 'boolean' },
-                placeholder: { type: 'string', minLength: 0, maxLength: 160 },
+                placeholder: { type: 'string', minLength: 0, maxLength: 48 },
               },
             },
           },
@@ -266,11 +266,11 @@ export const SESSION_DECISION_SCHEMA = {
       required: ['required', 'reason', 'behaviors'],
       properties: {
         required: { type: 'boolean' },
-        reason: { type: 'string', minLength: 0, maxLength: 300 },
+        reason: { type: 'string', minLength: 0, maxLength: 80 },
         behaviors: {
           type: 'array',
-          items: { type: 'string', minLength: 1, maxLength: 160 },
-          maxItems: 8,
+          items: { type: 'string', minLength: 1, maxLength: 48 },
+          maxItems: 2,
         },
       },
     },
@@ -286,18 +286,22 @@ export const RENDER_PAGE_SCHEMA = {
 export const DEFAULT_RENDER_PAGE_PROMPT = DEFAULT_RENDERER_PAGE_PROMPT;
 
 export function buildDefaultRuntimeConfig(config = {}) {
+  const sharedModel = resolveSharedModelOverride(config);
+  const sharedReasoningEffort = resolveSharedReasoningOverride(config);
   return {
     sessionPlanner: {
-      model: config.model ?? 'gpt-5.4-mini',
-      reasoningEffort: config.reasoningEffort ?? 'low',
+      model: sharedModel ?? config.plannerModel ?? 'gpt-5.4-mini',
+      reasoningEffort:
+        sharedReasoningEffort ?? config.plannerReasoningEffort ?? 'low',
       prompt: loadPromptFile(
         'system-prompt.md',
         config.systemPrompt ?? DEFAULT_SESSION_PLANNER_PROMPT,
       ),
     },
     renderer: {
-      model: config.model ?? 'gpt-5.4-mini',
-      reasoningEffort: config.reasoningEffort ?? 'low',
+      model: sharedModel ?? config.rendererModel ?? 'gpt-5.4-nano',
+      reasoningEffort:
+        sharedReasoningEffort ?? config.rendererReasoningEffort ?? 'none',
       pagePrompt: loadPromptFile(
         'renderer-page-prompt.md',
         DEFAULT_RENDERER_PAGE_PROMPT,
@@ -321,6 +325,41 @@ export function loadPromptFile(filename, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function resolveSharedModelOverride(config) {
+  if (typeof config.modelOverride === 'string' && config.modelOverride.trim()) {
+    return config.modelOverride.trim();
+  }
+
+  if (
+    typeof config.model === 'string' &&
+    config.model.trim() &&
+    config.model.trim() !== 'gpt-5.4-mini'
+  ) {
+    return config.model.trim();
+  }
+
+  return null;
+}
+
+function resolveSharedReasoningOverride(config) {
+  if (
+    typeof config.reasoningEffortOverride === 'string' &&
+    config.reasoningEffortOverride.trim()
+  ) {
+    return config.reasoningEffortOverride.trim();
+  }
+
+  if (
+    typeof config.reasoningEffort === 'string' &&
+    config.reasoningEffort.trim() &&
+    config.reasoningEffort.trim() !== 'low'
+  ) {
+    return config.reasoningEffort.trim();
+  }
+
+  return null;
 }
 
 function colorProperties(maxLength) {

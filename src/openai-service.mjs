@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 import OpenAI from 'openai';
 
 import { serializeError, summarizeResponseUsage } from './logger.mjs';
@@ -93,7 +95,7 @@ export class OpenAIWebserverService {
         task: 'session planner',
         previousOutput,
         errorMessage,
-        hint: 'Return one valid decision object. For page decisions, include links, forms, and an explicit interactive requirement. For redirect decisions, location must be a same-origin path beginning with "/" and containing no spaces or prose; put any human-readable explanation in message.',
+        hint: 'Return one valid compact decision object. Keep summaries, design brief, and style-guide prose short. For page decisions, include links, forms, and an explicit interactive requirement. For redirect decisions, location must be a same-origin path beginning with "/" and containing no spaces or prose; put any human-readable explanation in message.',
       },
       runtimeConfig,
     );
@@ -125,7 +127,7 @@ export class OpenAIWebserverService {
         task: 'page renderer',
         previousOutput,
         errorMessage,
-        hint: 'Return one valid HTML fragment for the page main content only. Do not return <!doctype html>, <html>, <head>, or <body>. Do not use markdown fences, JSON wrappers, labels, or commentary. Keep the page compact. If space is tight, cut styling first, never visible text or required forms. Render each declared form exactly once with matching data-vb-form-id. The fragment must contain visible text. Inline any required JavaScript directly in script tags and do not use external script src attributes. Any optional style block must only refine the page content and must not target html, body, header, or footer.',
+        hint: 'Return one valid HTML fragment for the page main content only. Do not return <!doctype html>, <html>, <head>, or <body>. Do not use markdown fences, JSON wrappers, labels, or commentary. Keep the page compact. If space is tight, cut decoration first, never visible text or required forms. Prefer no <style> block at all. Render each declared form exactly once with matching data-vb-form-id. The fragment must contain visible text. Inline any required JavaScript directly in script tags and do not use external script src attributes. Any optional style block must only refine the page content and must not target html, body, header, or footer.',
       },
     });
   }
@@ -239,11 +241,21 @@ export class OpenAIWebserverService {
         instructions,
         input: [buildMessage(payload, repairContext)],
         store: false,
+        prompt_cache_key: buildPromptCacheKey([
+          task,
+          model,
+          payload?.seed_phrase,
+          payload?.path,
+        ]),
         text: {
           verbosity: 'low',
         },
         ...buildReasoningConfig(reasoningEffort),
-        max_output_tokens: this.config.maxOutputTokens,
+        max_output_tokens: resolveOutputTokenLimit(
+          this.config,
+          task,
+          repairContext,
+        ),
         truncation: 'auto',
       });
       attachResponseMeta(response, startedAt, Date.now());
@@ -269,13 +281,23 @@ export class OpenAIWebserverService {
       model: runtimeConfig.sessionPlanner.model,
       instructions: runtimeConfig.sessionPlanner.prompt,
       ...buildReasoningConfig(runtimeConfig.sessionPlanner.reasoningEffort),
+      prompt_cache_key: buildPromptCacheKey([
+        'session.plan',
+        runtimeConfig.sessionPlanner.model,
+        session.seedPhrase,
+      ]),
       ...(useConversation
         ? { conversation: session.conversationId }
         : { store: false }),
       input,
-      max_output_tokens: this.config.maxOutputTokens,
+      max_output_tokens: resolveOutputTokenLimit(
+        this.config,
+        'session.plan',
+        false,
+      ),
       truncation: 'auto',
       text: {
+        verbosity: 'low',
         format: {
           type: 'json_schema',
           name: 'session_decision',
@@ -472,4 +494,34 @@ function buildReasoningConfig(reasoningEffort) {
       summary: 'auto',
     },
   };
+}
+
+function resolveOutputTokenLimit(config, task, repairContext) {
+  if (
+    Number.isInteger(config.maxOutputTokensOverride) &&
+    config.maxOutputTokensOverride > 0
+  ) {
+    return config.maxOutputTokensOverride;
+  }
+
+  const baseLimit =
+    task === 'session.plan'
+      ? config.plannerMaxOutputTokens
+      : config.rendererMaxOutputTokens;
+  if (!repairContext) {
+    return baseLimit;
+  }
+
+  return Math.max(500, Math.min(baseLimit, Math.round(baseLimit * 0.7)));
+}
+
+function buildPromptCacheKey(parts) {
+  const serialized = parts
+    .filter((value) => typeof value === 'string' && value.trim())
+    .join('|');
+  if (!serialized) {
+    return undefined;
+  }
+
+  return `vb:${crypto.createHash('sha1').update(serialized).digest('hex')}`;
 }

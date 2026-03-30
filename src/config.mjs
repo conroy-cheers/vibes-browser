@@ -7,9 +7,18 @@ const DEFAULTS = {
   consoleHost: '127.0.0.1',
   consolePort: 8081,
   model: 'gpt-5.4-mini',
+  modelOverride: null,
+  plannerModel: 'gpt-5.4-mini',
+  rendererModel: 'gpt-5.4-nano',
   apiBase: 'https://api.openai.com/v1',
   maxOutputTokens: 4000,
+  maxOutputTokensOverride: null,
+  plannerMaxOutputTokens: 900,
+  rendererMaxOutputTokens: 1000,
   reasoningEffort: 'low',
+  reasoningEffortOverride: null,
+  plannerReasoningEffort: 'low',
+  rendererReasoningEffort: 'none',
   maxRepairAttempts: 2,
   sessionTtlMinutes: 30,
   logLevel: 'info',
@@ -83,6 +92,7 @@ export function parseCliArgs(argv) {
         break;
       case '--model':
         args.model = next();
+        args.modelOverride = args.model;
         break;
       case '--console-port':
         args.consolePort = Number.parseInt(next(), 10);
@@ -95,9 +105,11 @@ export function parseCliArgs(argv) {
         break;
       case '--max-output-tokens':
         args.maxOutputTokens = Number.parseInt(next(), 10);
+        args.maxOutputTokensOverride = args.maxOutputTokens;
         break;
       case '--reasoning-effort':
         args.reasoningEffort = next();
+        args.reasoningEffortOverride = args.reasoningEffort;
         break;
       case '--max-repair-attempts':
         args.maxRepairAttempts = Number.parseInt(next(), 10);
@@ -214,11 +226,11 @@ export function usage() {
     '  --host <host>                  Host to bind (default: 127.0.0.1)',
     '  --port <port>                  Port to bind (default: 8080)',
     '  --console-port <port>          Developer console port (default: 8081)',
-    '  --model <id>                   Model to use (default: gpt-5.4-mini)',
+    '  --model <id>                   Shared planner+renderer model override',
     '  --api-base <url>               OpenAI API base URL',
     '  --system-prompt-file <path>    Load prompt override from file',
-    '  --max-output-tokens <n>        Max tokens per model response',
-    '  --reasoning-effort <level>     none, low, medium, high, or xhigh',
+    '  --max-output-tokens <n>        Shared planner+renderer token cap override',
+    '  --reasoning-effort <level>     Shared override: none, low, medium, high, or xhigh',
     '  --max-repair-attempts <n>      Max lint-guided repair retries',
     '  --session-ttl-minutes <n>      In-memory session TTL',
     '  --log-level <level>            debug, info, warn, or error',

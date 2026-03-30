@@ -23,8 +23,12 @@ import {
 } from './validation.mjs';
 const SESSION_COOKIE = 'vibe_session';
 const PAGE_TOKEN_FIELD = '__vb_page';
+const PREFETCH_LINK_LIMIT = 5;
 let requestSequence = 0;
 let interactionSequence = 0;
+const NULL_RUNTIME_STATE = {
+  recordEvent() {},
+};
 
 export function createApp(config, dependencies = {}) {
   const runtimeState =
@@ -273,6 +277,8 @@ export function createApp(config, dependencies = {}) {
         lastSeenAt: now(),
         queue: Promise.resolve(),
         pendingRedirect: null,
+        revision: 0,
+        prefetches: new Map(),
         pathState: new Map(),
         pageInstances: new Map(),
       });
@@ -417,6 +423,24 @@ export function createApp(config, dependencies = {}) {
         );
       }
 
+      const prefetchedEnvelope = await maybeUsePrefetchedEnvelope({
+        session,
+        requestInfo,
+        config,
+        openaiService,
+        requestLogger,
+        now,
+        pageTokenSecret,
+        runtimeState,
+        requestId,
+        interactionId: interaction.id,
+        trigger: interaction.trigger,
+        runtimeConfig: requestRuntimeConfig,
+      });
+      if (prefetchedEnvelope) {
+        return prefetchedEnvelope;
+      }
+
       const plannerRequest = buildPlannerRequest(
         session,
         requestInfo,
@@ -465,7 +489,7 @@ export function createApp(config, dependencies = {}) {
 
       return await materializeDecision({
         session,
-        decision,
+        decision: normalizeDecisionForRequest(decision, requestInfo),
         requestInfo,
         config,
         openaiService,
@@ -522,6 +546,7 @@ async function materializeDecision({
   interactionId,
   trigger,
   runtimeConfig,
+  allowPrefetch = true,
 }) {
   runtimeState.recordEvent({
     type: 'session.plan.parsed',
@@ -541,6 +566,21 @@ async function materializeDecision({
       location: decision.location,
       createdAt: now(),
     });
+    const committedRevision = session.revision + 1;
+    if (allowPrefetch) {
+      scheduleDecisionPrefetches({
+        session,
+        decision,
+        requestLogger,
+        config,
+        openaiService,
+        now,
+        pageTokenSecret,
+        runtimeConfig,
+        baseRevision: committedRevision,
+      });
+    }
+    session.revision = committedRevision;
     return textEnvelope(303, 'See Other', {
       location: decision.location,
       'content-type': 'text/plain; charset=utf-8',
@@ -548,14 +588,30 @@ async function materializeDecision({
   }
 
   if (decision.kind === 'not_found') {
+    session.revision += 1;
     return htmlEnvelope(404, buildErrorPage(decision.title, decision.message));
   }
 
   if (decision.kind === 'error_page') {
+    session.revision += 1;
     return htmlEnvelope(500, buildErrorPage(decision.title, decision.message));
   }
 
   session.siteStyleGuide = decision.siteStyleGuide;
+  const committedRevision = session.revision + 1;
+  if (allowPrefetch) {
+    scheduleDecisionPrefetches({
+      session,
+      decision,
+      requestLogger,
+      config,
+      openaiService,
+      now,
+      pageTokenSecret,
+      runtimeConfig,
+      baseRevision: committedRevision,
+    });
+  }
 
   const pageInstanceId = crypto.randomUUID();
   const formTokens = Object.fromEntries(
@@ -579,15 +635,29 @@ async function materializeDecision({
     path_state_summary: decision.pathStateSummary,
     title: decision.title,
     design_brief: decision.designBrief,
-    links: decision.links,
-    forms: decision.forms,
+    links: decision.links.map((link) => ({
+      href: link.href,
+      label: link.label,
+    })),
+    forms: decision.forms.map((form) => ({
+      form_id: form.formId,
+      method: form.method,
+      action: form.action,
+      submit_label: form.submitLabel,
+      fields: form.fields.map((field) => ({
+        name: field.name,
+        label: field.label,
+        type: field.type,
+        required: field.required,
+        placeholder: field.placeholder,
+      })),
+    })),
     interactive_requirement: {
       required: decision.interactiveRequirement.required,
       reason: decision.interactiveRequirement.reason,
       behaviors: decision.interactiveRequirement.behaviors,
     },
-    site_style_guide: serializeSiteStyleGuide(decision.siteStyleGuide),
-    renderer_scaffolding: runtimeConfig.renderer.scaffolding,
+    site_style_guide: summarizeRendererStyleGuide(decision.siteStyleGuide),
   };
   runtimeState.recordEvent({
     type: 'renderer.page.input',
@@ -689,7 +759,100 @@ async function materializeDecision({
     configVersion: runtimeConfig.version,
   });
 
+  session.revision = committedRevision;
   return htmlEnvelope(200, renderedPage.html);
+}
+
+async function maybeUsePrefetchedEnvelope({
+  session,
+  requestInfo,
+  config,
+  openaiService,
+  requestLogger,
+  now,
+  pageTokenSecret,
+  runtimeState,
+  requestId,
+  interactionId,
+  trigger,
+  runtimeConfig,
+}) {
+  if (!isPrefetchEligibleRequest(session, requestInfo)) {
+    return null;
+  }
+
+  const cacheKey = buildPrefetchKey(requestInfo);
+  const entry = session.prefetches.get(cacheKey);
+  if (!entry || entry.baseRevision !== session.revision) {
+    return null;
+  }
+
+  requestLogger.info('prefetch.await', {
+    cacheKey,
+    baseRevision: entry.baseRevision,
+    requestPath: buildPathWithQuery(requestInfo.path, requestInfo.query),
+  });
+
+  runtimeState.recordEvent({
+    type: 'prefetch.await',
+    actor: 'server',
+    requestId,
+    sessionId: session.id,
+    interactionId,
+    trigger,
+    summary: `Awaited prefetched response for ${requestInfo.path}`,
+    payload: {
+      cacheKey,
+      baseRevision: entry.baseRevision,
+    },
+    configVersion: runtimeConfig.version,
+  });
+
+  const result = await entry.promise.catch((error) => {
+    requestLogger.warn('prefetch.failed', {
+      cacheKey,
+      baseRevision: entry.baseRevision,
+      error: serializeError(error),
+    });
+    session.prefetches.delete(cacheKey);
+    return null;
+  });
+  if (!result || result.baseRevision !== session.revision) {
+    return null;
+  }
+
+  session.prefetches.delete(cacheKey);
+  applyPrefetchResult(session, result);
+  requestLogger.info('prefetch.hit', {
+    cacheKey,
+    postRevision: result.postRevision,
+  });
+  runtimeState.recordEvent({
+    type: 'prefetch.hit',
+    actor: 'server',
+    requestId,
+    sessionId: session.id,
+    interactionId,
+    trigger,
+    summary: `Served prefetched response for ${requestInfo.path}`,
+    payload: {
+      cacheKey,
+      postRevision: result.postRevision,
+    },
+    configVersion: runtimeConfig.version,
+  });
+  scheduleDecisionPrefetches({
+    session,
+    decision: result.decision,
+    requestLogger,
+    config,
+    openaiService,
+    now,
+    pageTokenSecret,
+    runtimeConfig,
+    baseRevision: session.revision,
+  });
+  return result.envelope;
 }
 
 async function materializeStructuredResponse({
@@ -858,13 +1021,17 @@ function buildPlannerRequest(session, requestInfo, boundPage) {
       method: requestInfo.method,
       path: requestInfo.path,
       query: requestInfo.query,
-      headers: requestInfo.headers,
-      body_text: requestInfo.bodyText,
+      body_text:
+        requestInfo.method === 'GET' || requestInfo.method === 'HEAD'
+          ? ''
+          : requestInfo.bodyText,
       form_data: requestInfo.formData,
     },
-    latest_path_state: session.pathState.get(requestInfo.path) ?? null,
+    latest_path_state: summarizePlannerPathState(
+      session.pathState.get(requestInfo.path) ?? null,
+    ),
     site_style_guide: session.siteStyleGuide
-      ? serializeSiteStyleGuide(session.siteStyleGuide)
+      ? summarizePlannerStyleGuide(session.siteStyleGuide)
       : null,
     source_page: boundPage
       ? {
@@ -873,16 +1040,55 @@ function buildPlannerRequest(session, requestInfo, boundPage) {
           page_type: boundPage.pageInstance.pageType,
           page_summary: boundPage.pageInstance.pageSummary,
           title: boundPage.pageInstance.title,
-          form: {
-            form_id: boundPage.form.formId,
-            method: boundPage.form.method,
-            action: boundPage.form.action,
-            purpose: boundPage.form.purpose,
-            fields: boundPage.form.fields,
-          },
+          form: summarizePlannerForm(boundPage.form),
           submission_fields: boundPage.submissionFields,
         }
       : null,
+  };
+}
+
+function normalizeDecisionForRequest(decision, requestInfo) {
+  if (decision.kind !== 'page') {
+    return decision;
+  }
+
+  if (decision.interactiveRequirement.required) {
+    return decision;
+  }
+
+  if (decision.interactiveRequirement.behaviors.length === 0) {
+    return decision;
+  }
+
+  const hasSamePathGetForm = decision.forms.some(
+    (form) => form.method === 'GET' && form.action === requestInfo.path,
+  );
+  if (!hasSamePathGetForm) {
+    return decision;
+  }
+
+  const interactiveHint = [
+    decision.pageType,
+    decision.title,
+    decision.pageSummary,
+    requestInfo.path,
+  ]
+    .join(' ')
+    .toLowerCase();
+  if (
+    !/(calculator|inventory|search|filter|results|planner|directory|browse|map|dashboard)/u.test(
+      interactiveHint,
+    )
+  ) {
+    return decision;
+  }
+
+  return {
+    ...decision,
+    interactiveRequirement: {
+      ...decision.interactiveRequirement,
+      required: true,
+    },
   };
 }
 
@@ -1065,6 +1271,277 @@ function serializeSiteStyleGuide(styleGuide) {
     },
     motifs: styleGuide.motifs,
   };
+}
+
+function summarizePlannerPathState(pathState) {
+  if (!pathState) {
+    return null;
+  }
+
+  return {
+    pageType: pathState.pageType,
+    pageSummary: pathState.pageSummary,
+    title: pathState.title,
+  };
+}
+
+function summarizePlannerStyleGuide(styleGuide) {
+  return {
+    theme_name: styleGuide.themeName,
+    visual_summary: styleGuide.visualSummary,
+    chrome: {
+      site_title: styleGuide.chrome.siteTitle,
+      tagline: styleGuide.chrome.tagline,
+    },
+    motifs: styleGuide.motifs,
+  };
+}
+
+function summarizePlannerForm(form) {
+  return {
+    form_id: form.formId,
+    method: form.method,
+    action: form.action,
+    purpose: form.purpose,
+    field_names: form.fields.map((field) => field.name),
+  };
+}
+
+function summarizeRendererStyleGuide(styleGuide) {
+  return {
+    theme_name: styleGuide.themeName,
+    visual_summary: styleGuide.visualSummary,
+    chrome: {
+      site_title: styleGuide.chrome.siteTitle,
+      tagline: styleGuide.chrome.tagline,
+    },
+    motifs: styleGuide.motifs,
+  };
+}
+
+function scheduleDecisionPrefetches({
+  session,
+  decision,
+  requestLogger,
+  config,
+  openaiService,
+  now,
+  pageTokenSecret,
+  runtimeConfig,
+  baseRevision,
+}) {
+  if (session.mode !== 'local') {
+    session.prefetches.clear();
+    return;
+  }
+
+  const targets =
+    decision.kind === 'page'
+      ? [
+          ...new Set(
+            decision.links
+              .map((link) => link?.href)
+              .filter(
+                (href) => typeof href === 'string' && href.startsWith('/'),
+              )
+              .slice(0, PREFETCH_LINK_LIMIT),
+          ),
+        ]
+      : decision.kind === 'redirect' && decision.location.startsWith('/')
+        ? [decision.location]
+        : [];
+
+  if (!targets.length) {
+    session.prefetches.clear();
+    return;
+  }
+
+  const snapshot = snapshotSessionForPrefetch(session);
+  session.prefetches = new Map(
+    targets.map((href) => {
+      const requestInfo = buildPrefetchRequestInfo(href);
+      const cacheKey = buildPrefetchKey(requestInfo);
+      return [
+        cacheKey,
+        {
+          baseRevision,
+          promise: prefetchRequest({
+            session,
+            snapshot,
+            requestInfo,
+            config,
+            openaiService,
+            requestLogger,
+            now,
+            pageTokenSecret,
+            runtimeConfig,
+            baseRevision,
+          }).catch((error) => {
+            requestLogger.warn('prefetch.background_failed', {
+              cacheKey,
+              baseRevision,
+              error: serializeError(error),
+            });
+            return null;
+          }),
+        },
+      ];
+    }),
+  );
+}
+
+async function prefetchRequest({
+  session,
+  snapshot,
+  requestInfo,
+  config,
+  openaiService,
+  requestLogger,
+  now,
+  pageTokenSecret,
+  runtimeConfig,
+  baseRevision,
+}) {
+  const prefetchSession = cloneSessionForPrefetch(session, snapshot);
+  const plannerRequest = buildPlannerRequest(
+    prefetchSession,
+    requestInfo,
+    null,
+  );
+  const initialPlan = await openaiService.planSessionResponse(
+    prefetchSession,
+    plannerRequest,
+    runtimeConfig,
+  );
+  const decision = await materializeStructuredResponse({
+    initialResponse: initialPlan,
+    parseOutput: parseSessionDecision,
+    repair: (previousOutput, issues) =>
+      openaiService.repairSessionPlan(
+        prefetchSession,
+        plannerRequest,
+        previousOutput,
+        issues,
+        runtimeConfig,
+      ),
+    logger: requestLogger,
+    eventBase: 'prefetch.plan',
+    maxRepairAttempts: config.maxRepairAttempts,
+    runtimeState: NULL_RUNTIME_STATE,
+    requestId: `prefetch:${buildPrefetchKey(requestInfo)}`,
+    sessionId: session.id,
+    interactionId: null,
+    trigger: 'prefetch',
+    actor: 'prefetch_session_agent',
+    summaryLabel: 'Prefetch planner',
+    configVersion: runtimeConfig.version,
+  });
+  const envelope = await materializeDecision({
+    session: prefetchSession,
+    decision: normalizeDecisionForRequest(decision, requestInfo),
+    requestInfo,
+    config,
+    openaiService,
+    requestLogger,
+    now,
+    pageTokenSecret,
+    runtimeState: NULL_RUNTIME_STATE,
+    requestId: `prefetch:${buildPrefetchKey(requestInfo)}`,
+    interactionId: null,
+    trigger: 'prefetch',
+    runtimeConfig,
+    allowPrefetch: false,
+  });
+
+  return {
+    baseRevision,
+    postRevision: prefetchSession.revision,
+    decision,
+    envelope,
+    state: snapshotPrefetchResultState(prefetchSession),
+  };
+}
+
+function isPrefetchEligibleRequest(session, requestInfo) {
+  return (
+    session.mode === 'local' &&
+    requestInfo.method === 'GET' &&
+    !requestInfo.pageToken
+  );
+}
+
+function buildPrefetchKey(requestInfo) {
+  return `${requestInfo.method} ${buildPathWithQuery(
+    requestInfo.path,
+    requestInfo.query,
+  )}`;
+}
+
+function buildPrefetchRequestInfo(href) {
+  const url = new URL(href, 'http://prefetch.local');
+  return {
+    method: 'GET',
+    path: url.pathname,
+    query: Object.fromEntries(url.searchParams.entries()),
+    headers: [],
+    bodyText: '',
+    formData: null,
+    pageToken: null,
+  };
+}
+
+function snapshotSessionForPrefetch(session) {
+  return {
+    history: structuredClone(session.history),
+    siteStyleGuide: structuredClone(session.siteStyleGuide),
+    pathState: cloneEntryMap(session.pathState),
+    pageInstances: cloneEntryMap(session.pageInstances),
+  };
+}
+
+function cloneSessionForPrefetch(session, snapshot) {
+  return {
+    id: session.id,
+    conversationId: null,
+    mode: 'local',
+    history: structuredClone(snapshot.history),
+    seedPhrase: session.seedPhrase,
+    siteStyleGuide: structuredClone(snapshot.siteStyleGuide),
+    createdAt: session.createdAt,
+    lastSeenAt: session.lastSeenAt,
+    queue: Promise.resolve(),
+    pendingRedirect: null,
+    revision: session.revision,
+    prefetches: new Map(),
+    pathState: cloneEntryMap(snapshot.pathState),
+    pageInstances: cloneEntryMap(snapshot.pageInstances),
+  };
+}
+
+function snapshotPrefetchResultState(session) {
+  return {
+    history: structuredClone(session.history),
+    siteStyleGuide: structuredClone(session.siteStyleGuide),
+    pathState: cloneEntryMap(session.pathState),
+    pageInstances: cloneEntryMap(session.pageInstances),
+  };
+}
+
+function applyPrefetchResult(session, result) {
+  session.history = structuredClone(result.state.history);
+  session.siteStyleGuide = structuredClone(result.state.siteStyleGuide);
+  session.pathState = cloneEntryMap(result.state.pathState);
+  session.pageInstances = cloneEntryMap(result.state.pageInstances);
+  session.revision = result.postRevision;
+}
+
+function cloneEntryMap(source) {
+  return new Map(
+    [...(source?.entries?.() ?? [])].map(([key, value]) => [
+      key,
+      structuredClone(value),
+    ]),
+  );
 }
 
 function normalizeStringEntries(entries) {

@@ -26,7 +26,7 @@ test('developer console exposes runtime config APIs', async () => {
       response.json(),
     );
     assert.equal(before.version, 1);
-    assert.equal(before.active.sessionPlanner.model, DEFAULTS.model);
+    assert.equal(before.active.sessionPlanner.model, DEFAULTS.plannerModel);
 
     const applied = await fetch(`${base}/api/runtime-config/apply`, {
       method: 'POST',
