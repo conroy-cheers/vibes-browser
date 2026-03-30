@@ -2,9 +2,11 @@
 import process from 'node:process';
 
 import { createApp } from './app.mjs';
+import { createDeveloperConsole } from './dev-console.mjs';
 import { getConfig, usage } from './config.mjs';
 import { createLogger, serializeError } from './logger.mjs';
 import { OpenAIWebserverService } from './openai-service.mjs';
+import { createRuntimeState } from './runtime-state.mjs';
 
 async function main() {
   let config;
@@ -40,28 +42,53 @@ async function main() {
   logger.info('process.start', {
     host: config.host,
     port: config.port,
+    consoleHost: config.consoleHost,
+    consolePort: config.consolePort,
     model: config.model,
     logLevel: config.logLevel,
   });
 
-  const openaiService = new OpenAIWebserverService(config, { logger });
+  const runtimeState = createRuntimeState({ config });
+  const openaiService = new OpenAIWebserverService(config, {
+    logger,
+    runtimeConfigProvider: () => runtimeState.getActiveRuntimeConfig(),
+  });
   const app = createApp(config, {
     openaiService,
     logger,
+    runtimeState,
+  });
+  const developerConsole = createDeveloperConsole(config, {
+    logger,
+    runtimeState,
   });
 
-  const address = await app.listen();
+  const [address, consoleAddress] = await Promise.all([
+    app.listen(),
+    developerConsole.listen(),
+  ]);
   const actualPort =
     typeof address === 'object' && address ? address.port : config.port;
+  const actualConsolePort =
+    typeof consoleAddress === 'object' && consoleAddress
+      ? consoleAddress.port
+      : config.consolePort;
   logger.info('server.listen', {
     host: config.host,
     port: actualPort,
   });
+  logger.info('console.listen', {
+    host: config.consoleHost,
+    port: actualConsolePort,
+  });
   console.log(`Listening on http://${config.host}:${actualPort}`);
+  console.log(
+    `Developer console on http://${config.consoleHost}:${actualConsolePort}`,
+  );
 
   const shutdown = async () => {
     logger.info('process.shutdown');
-    await app.close();
+    await Promise.all([app.close(), developerConsole.close()]);
     process.exit(0);
   };
 

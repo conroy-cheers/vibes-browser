@@ -4,6 +4,8 @@ import path from 'node:path';
 const DEFAULTS = {
   host: '127.0.0.1',
   port: 8080,
+  consoleHost: '127.0.0.1',
+  consolePort: 8081,
   model: 'gpt-5.4-mini',
   apiBase: 'https://api.openai.com/v1',
   maxOutputTokens: 4000,
@@ -82,6 +84,9 @@ export function parseCliArgs(argv) {
       case '--model':
         args.model = next();
         break;
+      case '--console-port':
+        args.consolePort = Number.parseInt(next(), 10);
+        break;
       case '--api-base':
         args.apiBase = next();
         break;
@@ -126,6 +131,18 @@ function validateConfig(config) {
     config.port > 65535
   ) {
     throw new Error('Port must be an integer between 1 and 65535.');
+  }
+
+  if (
+    !Number.isInteger(config.consolePort) ||
+    config.consolePort < 1 ||
+    config.consolePort > 65535
+  ) {
+    throw new Error('console-port must be an integer between 1 and 65535.');
+  }
+
+  if (config.consolePort === config.port) {
+    throw new Error('console-port must differ from port.');
   }
 
   if (
@@ -196,6 +213,7 @@ export function usage() {
     'Options:',
     '  --host <host>                  Host to bind (default: 127.0.0.1)',
     '  --port <port>                  Port to bind (default: 8080)',
+    '  --console-port <port>          Developer console port (default: 8081)',
     '  --model <id>                   Model to use (default: gpt-5.4-mini)',
     '  --api-base <url>               OpenAI API base URL',
     '  --system-prompt-file <path>    Load prompt override from file',

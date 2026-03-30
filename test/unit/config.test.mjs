@@ -7,6 +7,7 @@ test('parseCliArgs uses defaults', () => {
   const config = parseCliArgs([]);
   assert.equal(config.host, '127.0.0.1');
   assert.equal(config.port, 8080);
+  assert.equal(config.consolePort, 8081);
   assert.equal(config.model, 'gpt-5.4-mini');
   assert.equal(config.reasoningEffort, 'low');
   assert.equal(config.maxRepairAttempts, 2);
@@ -16,6 +17,8 @@ test('parseCliArgs reads overrides', () => {
   const config = parseCliArgs([
     '--port',
     '9000',
+    '--console-port',
+    '9001',
     '--model',
     'gpt-5.4',
     '--reasoning-effort',
@@ -25,6 +28,7 @@ test('parseCliArgs reads overrides', () => {
     '--verbose',
   ]);
   assert.equal(config.port, 9000);
+  assert.equal(config.consolePort, 9001);
   assert.equal(config.model, 'gpt-5.4');
   assert.equal(config.reasoningEffort, 'medium');
   assert.equal(config.maxRepairAttempts, 3);
@@ -34,4 +38,10 @@ test('parseCliArgs reads overrides', () => {
 test('parseCliArgs reads explicit log level', () => {
   const config = parseCliArgs(['--log-level', 'warn']);
   assert.equal(config.logLevel, 'warn');
+});
+
+test('parseCliArgs rejects identical app and console ports', () => {
+  assert.throws(() => {
+    parseCliArgs(['--port', '8080', '--console-port', '8080']);
+  }, /console-port must differ from port/u);
 });

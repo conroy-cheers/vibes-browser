@@ -1,45 +1,339 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { DEFAULT_SYSTEM_PROMPT } from './system-prompt.generated.mjs';
+import {
+  DEFAULT_RENDERER_PAGE_PROMPT,
+  DEFAULT_RENDERER_SCAFFOLDING,
+  DEFAULT_SESSION_PLANNER_PROMPT,
+} from './prompt-defaults.generated.mjs';
 
-export const HTTP_ENVELOPE_SCHEMA = {
+export const SITE_STYLE_GUIDE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['status', 'headers', 'body'],
+  required: [
+    'theme_name',
+    'visual_summary',
+    'palette',
+    'typography',
+    'components',
+    'chrome',
+    'motifs',
+  ],
   properties: {
-    status: {
-      type: 'integer',
-      minimum: 100,
-      maximum: 599,
+    theme_name: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 80,
     },
-    headers: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['name', 'value'],
-        properties: {
-          name: { type: 'string', minLength: 1, maxLength: 128 },
-          value: { type: 'string', minLength: 0, maxLength: 4096 },
+    visual_summary: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 400,
+    },
+    palette: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'page_bg',
+        'panel_bg',
+        'panel_alt_bg',
+        'text',
+        'muted_text',
+        'accent',
+        'accent_alt',
+        'border',
+      ],
+      properties: colorProperties(32),
+    },
+    typography: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['body_stack', 'display_stack', 'heading_treatment', 'density'],
+      properties: {
+        body_stack: {
+          type: 'string',
+          enum: ['sans', 'humanist', 'serif', 'mono'],
+        },
+        display_stack: {
+          type: 'string',
+          enum: ['sans', 'humanist', 'serif', 'mono'],
+        },
+        heading_treatment: {
+          type: 'string',
+          enum: ['plain', 'caps', 'poster'],
+        },
+        density: {
+          type: 'string',
+          enum: ['compact', 'standard', 'roomy'],
         },
       },
-      maxItems: 32,
     },
-    body: {
-      type: 'string',
-      maxLength: 30000,
+    components: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'nav_style',
+        'button_style',
+        'input_style',
+        'card_style',
+        'table_style',
+      ],
+      properties: {
+        nav_style: {
+          type: 'string',
+          enum: ['pills', 'tabs', 'underline'],
+        },
+        button_style: {
+          type: 'string',
+          enum: ['solid', 'outline', 'soft'],
+        },
+        input_style: {
+          type: 'string',
+          enum: ['boxed', 'underline', 'soft'],
+        },
+        card_style: {
+          type: 'string',
+          enum: ['bordered', 'filled', 'lifted'],
+        },
+        table_style: {
+          type: 'string',
+          enum: ['grid', 'lined', 'plain'],
+        },
+      },
+    },
+    chrome: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['site_title', 'tagline', 'footer_tone'],
+      properties: {
+        site_title: {
+          type: 'string',
+          minLength: 0,
+          maxLength: 120,
+        },
+        tagline: {
+          type: 'string',
+          minLength: 0,
+          maxLength: 160,
+        },
+        footer_tone: {
+          type: 'string',
+          minLength: 0,
+          maxLength: 240,
+        },
+      },
+    },
+    motifs: {
+      type: 'array',
+      maxItems: 6,
+      items: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 40,
+      },
     },
   },
 };
 
+export const SESSION_DECISION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'kind',
+    'page_type',
+    'page_summary',
+    'path_state_summary',
+    'title',
+    'design_brief',
+    'location',
+    'message',
+    'links',
+    'forms',
+    'interactive_requirement',
+    'site_style_guide',
+  ],
+  properties: {
+    kind: {
+      type: 'string',
+      enum: ['page', 'redirect', 'not_found', 'error_page'],
+    },
+    page_type: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 80,
+    },
+    page_summary: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 500,
+    },
+    path_state_summary: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 500,
+    },
+    title: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 160,
+    },
+    design_brief: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 2500,
+    },
+    location: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 512,
+      pattern: '^(|\\/(?!\\/)[^\\s]*)$',
+    },
+    message: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 500,
+    },
+    links: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['href', 'label', 'description'],
+        properties: {
+          href: { type: 'string', minLength: 1, maxLength: 512 },
+          label: { type: 'string', minLength: 1, maxLength: 120 },
+          description: { type: 'string', minLength: 0, maxLength: 240 },
+        },
+      },
+      maxItems: 24,
+    },
+    forms: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'form_id',
+          'method',
+          'action',
+          'purpose',
+          'submit_label',
+          'fields',
+        ],
+        properties: {
+          form_id: { type: 'string', minLength: 1, maxLength: 80 },
+          method: {
+            type: 'string',
+            enum: ['GET', 'POST'],
+          },
+          action: { type: 'string', minLength: 1, maxLength: 512 },
+          purpose: { type: 'string', minLength: 1, maxLength: 240 },
+          submit_label: { type: 'string', minLength: 1, maxLength: 80 },
+          fields: {
+            type: 'array',
+            maxItems: 12,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['name', 'label', 'type', 'required', 'placeholder'],
+              properties: {
+                name: { type: 'string', minLength: 1, maxLength: 80 },
+                label: { type: 'string', minLength: 1, maxLength: 120 },
+                type: {
+                  type: 'string',
+                  enum: [
+                    'text',
+                    'search',
+                    'email',
+                    'url',
+                    'number',
+                    'textarea',
+                    'hidden',
+                  ],
+                },
+                required: { type: 'boolean' },
+                placeholder: { type: 'string', minLength: 0, maxLength: 160 },
+              },
+            },
+          },
+        },
+      },
+    },
+    interactive_requirement: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['required', 'reason', 'behaviors'],
+      properties: {
+        required: { type: 'boolean' },
+        reason: { type: 'string', minLength: 0, maxLength: 300 },
+        behaviors: {
+          type: 'array',
+          items: { type: 'string', minLength: 1, maxLength: 160 },
+          maxItems: 8,
+        },
+      },
+    },
+    site_style_guide: SITE_STYLE_GUIDE_SCHEMA,
+  },
+};
+
+export const RENDER_PAGE_SCHEMA = {
+  type: 'string',
+  maxLength: 30000,
+};
+
+export const DEFAULT_RENDER_PAGE_PROMPT = DEFAULT_RENDERER_PAGE_PROMPT;
+
+export function buildDefaultRuntimeConfig(config = {}) {
+  return {
+    sessionPlanner: {
+      model: config.model ?? 'gpt-5.4-mini',
+      reasoningEffort: config.reasoningEffort ?? 'low',
+      prompt: loadPromptFile(
+        'system-prompt.md',
+        config.systemPrompt ?? DEFAULT_SESSION_PLANNER_PROMPT,
+      ),
+    },
+    renderer: {
+      model: config.model ?? 'gpt-5.4-mini',
+      reasoningEffort: config.reasoningEffort ?? 'low',
+      pagePrompt: loadPromptFile(
+        'renderer-page-prompt.md',
+        DEFAULT_RENDERER_PAGE_PROMPT,
+      ),
+      scaffolding: loadPromptFile(
+        'renderer-scaffolding.md',
+        DEFAULT_RENDERER_SCAFFOLDING,
+      ),
+    },
+  };
+}
+
 export function buildSystemPrompt() {
+  return loadPromptFile('system-prompt.md', DEFAULT_SESSION_PLANNER_PROMPT);
+}
+
+export function loadPromptFile(filename, fallback) {
   try {
-    const promptPath = path.join(process.cwd(), 'system-prompt.md');
+    const promptPath = path.join(process.cwd(), filename);
     return fs.readFileSync(promptPath, 'utf8');
   } catch {
-    return DEFAULT_SYSTEM_PROMPT;
+    return fallback;
   }
+}
+
+function colorProperties(maxLength) {
+  return {
+    page_bg: { type: 'string', minLength: 0, maxLength },
+    panel_bg: { type: 'string', minLength: 0, maxLength },
+    panel_alt_bg: { type: 'string', minLength: 0, maxLength },
+    text: { type: 'string', minLength: 0, maxLength },
+    muted_text: { type: 'string', minLength: 0, maxLength },
+    accent: { type: 'string', minLength: 0, maxLength },
+    accent_alt: { type: 'string', minLength: 0, maxLength },
+    border: { type: 'string', minLength: 0, maxLength },
+  };
 }
 
 export function buildBootstrapPage(errorMessage = '') {

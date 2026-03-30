@@ -28,6 +28,7 @@ export function createLogger(options = {}) {
 
   return {
     level,
+    base,
     child(childBase = {}) {
       return createLogger({
         level,
@@ -130,6 +131,18 @@ export function summarizeResponseUsage(response) {
           input_tokens: response.usage.input_tokens,
           output_tokens: response.usage.output_tokens,
           total_tokens: response.usage.total_tokens,
+          input_tokens_details: response.usage.input_tokens_details
+            ? {
+                cached_tokens:
+                  response.usage.input_tokens_details.cached_tokens,
+              }
+            : undefined,
+          output_tokens_details: response.usage.output_tokens_details
+            ? {
+                reasoning_tokens:
+                  response.usage.output_tokens_details.reasoning_tokens,
+              }
+            : undefined,
         }
       : undefined,
   };
