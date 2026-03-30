@@ -7,6 +7,7 @@ const DEFAULTS = {
   model: 'gpt-5.4-mini',
   apiBase: 'https://api.openai.com/v1',
   maxOutputTokens: 4000,
+  reasoningEffort: 'low',
   maxRepairAttempts: 2,
   sessionTtlMinutes: 30,
   logLevel: 'info',
@@ -90,6 +91,9 @@ export function parseCliArgs(argv) {
       case '--max-output-tokens':
         args.maxOutputTokens = Number.parseInt(next(), 10);
         break;
+      case '--reasoning-effort':
+        args.reasoningEffort = next();
+        break;
       case '--max-repair-attempts':
         args.maxRepairAttempts = Number.parseInt(next(), 10);
         break;
@@ -129,6 +133,23 @@ function validateConfig(config) {
     config.maxOutputTokens <= 0
   ) {
     throw new Error('max-output-tokens must be a positive integer.');
+  }
+
+  if (
+    !(
+      config.reasoningEffort in
+      {
+        none: true,
+        low: true,
+        medium: true,
+        high: true,
+        xhigh: true,
+      }
+    )
+  ) {
+    throw new Error(
+      'reasoning-effort must be one of: none, low, medium, high, xhigh.',
+    );
   }
 
   if (
@@ -175,10 +196,11 @@ export function usage() {
     'Options:',
     '  --host <host>                  Host to bind (default: 127.0.0.1)',
     '  --port <port>                  Port to bind (default: 8080)',
-    '  --model <id>                   Model to use (default: gpt-5.4)',
+    '  --model <id>                   Model to use (default: gpt-5.4-mini)',
     '  --api-base <url>               OpenAI API base URL',
     '  --system-prompt-file <path>    Load prompt override from file',
     '  --max-output-tokens <n>        Max tokens per model response',
+    '  --reasoning-effort <level>     none, low, medium, high, or xhigh',
     '  --max-repair-attempts <n>      Max lint-guided repair retries',
     '  --session-ttl-minutes <n>      In-memory session TTL',
     '  --log-level <level>            debug, info, warn, or error',

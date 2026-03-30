@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 
 import { chromium } from 'playwright-core';
 
 import { createApp } from '../../src/app.mjs';
 import { DEFAULTS, loadDotEnv } from '../../src/config.mjs';
 import { OpenAIWebserverService } from '../../src/openai-service.mjs';
+
+function chromiumPath() {
+  if (process.env.CHROMIUM_PATH) {
+    return process.env.CHROMIUM_PATH;
+  }
+
+  const result = spawnSync('bash', ['-lc', 'which chromium'], {
+    encoding: 'utf8',
+  });
+  return result.status === 0 ? result.stdout.trim() : '';
+}
 
 test('live OpenAI smoke flow', async (context) => {
   if (process.env.LIVE_OPENAI_TEST !== '1') {
@@ -17,7 +29,11 @@ test('live OpenAI smoke flow', async (context) => {
     context.skip('OPENAI_API_KEY is not configured');
   }
 
-  const executablePath = '/etc/profiles/per-user/conroy/bin/chromium';
+  const executablePath = chromiumPath();
+  if (!executablePath) {
+    context.skip('chromium is not installed');
+  }
+
   const config = {
     ...DEFAULTS,
     host: '127.0.0.1',

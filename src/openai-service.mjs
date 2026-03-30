@@ -159,6 +159,13 @@ export class OpenAIWebserverService {
     return {
       model: this.config.model,
       instructions: this.systemPrompt,
+      ...(this.config.reasoningEffort && this.config.reasoningEffort !== 'none'
+        ? {
+            reasoning: {
+              effort: this.config.reasoningEffort,
+            },
+          }
+        : {}),
       ...(useConversation
         ? { conversation: session.conversationId }
         : { store: false }),

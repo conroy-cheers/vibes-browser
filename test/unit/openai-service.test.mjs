@@ -25,6 +25,7 @@ test('service falls back to local history when conversation-backed responses are
         }
 
         assert.equal(payload.store, false);
+        assert.equal(payload.reasoning.effort, 'low');
         assert.ok(Array.isArray(payload.input));
         return {
           output_text: JSON.stringify({
