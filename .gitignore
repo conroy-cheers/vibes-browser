@@ -1,0 +1,9 @@
+.env
+result
+dist
+node_modules
+*.blob
+.direnv/
+playwright-report/
+test-results/
+sea-config.json

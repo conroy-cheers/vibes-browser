@@ -1,0 +1,32 @@
+{
+  "name": "vibes-browser",
+  "version": "0.1.0",
+  "description": "GPT-backed faux webserver CLI",
+  "type": "module",
+  "bin": {
+    "vibes-browser": "./src/cli.mjs"
+  },
+  "scripts": {
+    "sync:prompt": "node ./scripts/sync-system-prompt.mjs",
+    "start": "node ./src/cli.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test",
+    "test:unit": "node --test test/unit/*.test.mjs",
+    "test:browser": "node --test test/browser/*.test.mjs",
+    "test:live": "LIVE_OPENAI_TEST=1 node --test test/live/*.test.mjs",
+    "build:sea": "node ./scripts/build-sea.mjs"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "acorn": "^8.16.0",
+    "esbuild": "^0.25.11",
+    "openai": "^6.33.0",
+    "parse5": "^8.0.0",
+    "playwright-core": "^1.58.2",
+    "postcss": "^8.5.8",
+    "postject": "^1.0.0-alpha.6"
+  }
+}
