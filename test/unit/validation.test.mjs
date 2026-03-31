@@ -309,7 +309,7 @@ test('finalizeRenderedHtml scopes page-level style blocks inside the shell', () 
   );
 
   assert.match(html, /\[data-vb-page="true"\] h1/u);
-  assert.match(html, /data-vb-shell="header"/u);
+  assert.match(html, /data-vb-main="true"/u);
 });
 
 test('finalizeRenderedHtml drops malformed page styles instead of failing the page', () => {

@@ -189,17 +189,16 @@ test('browser flow keeps shell styling stable across page navigations in one ses
     await page.waitForSelector('h1');
 
     const before = await page.evaluate(() => {
-      const header = document.querySelector('[data-vb-shell="header"]');
       const mainButton = document.querySelector('[data-vb-page="true"] button');
       const pageRoot = document.querySelector('[data-vb-page="true"]');
-      const headerStyle = getComputedStyle(header);
+      const bodyStyle = getComputedStyle(document.body);
       const buttonStyle = getComputedStyle(mainButton);
       const pageRootStyle = getComputedStyle(pageRoot);
       return {
-        headerBg: headerStyle.backgroundColor,
+        bodyBg: bodyStyle.backgroundColor,
         buttonBg: buttonStyle.backgroundColor,
-        buttonBorderRadius: buttonStyle.borderRadius,
-        pageBorderRadius: pageRootStyle.borderRadius,
+        pageBg: pageRootStyle.backgroundColor,
+        pageBorder: pageRootStyle.border,
       };
     });
 
@@ -208,17 +207,16 @@ test('browser flow keeps shell styling stable across page navigations in one ses
     await page.waitForSelector('h1');
 
     const after = await page.evaluate(() => {
-      const header = document.querySelector('[data-vb-shell="header"]');
       const mainButton = document.querySelector('[data-vb-page="true"] button');
       const pageRoot = document.querySelector('[data-vb-page="true"]');
-      const headerStyle = getComputedStyle(header);
+      const bodyStyle = getComputedStyle(document.body);
       const buttonStyle = getComputedStyle(mainButton);
       const pageRootStyle = getComputedStyle(pageRoot);
       return {
-        headerBg: headerStyle.backgroundColor,
+        bodyBg: bodyStyle.backgroundColor,
         buttonBg: buttonStyle.backgroundColor,
-        buttonBorderRadius: buttonStyle.borderRadius,
-        pageBorderRadius: pageRootStyle.borderRadius,
+        pageBg: pageRootStyle.backgroundColor,
+        pageBorder: pageRootStyle.border,
       };
     });
 

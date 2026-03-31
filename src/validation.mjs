@@ -783,20 +783,8 @@ function normalizeSiteStyleGuide(styleGuide) {
 }
 
 function buildSiteShellDocument({ title, siteStyleGuide, pageHtml }) {
-  const chromeTitle =
-    siteStyleGuide.chrome.siteTitle || title || 'Vibes Browser Session';
-  const tagline = siteStyleGuide.chrome.tagline || '';
-  const footerTone = siteStyleGuide.chrome.footerTone || '';
-  const pageTitle = title || chromeTitle;
-  const dataAttrs = [
-    attr('data-vb-density', siteStyleGuide.typography.density),
-    attr('data-vb-heading', siteStyleGuide.typography.headingTreatment),
-    attr('data-vb-nav-style', siteStyleGuide.components.navStyle),
-    attr('data-vb-button-style', siteStyleGuide.components.buttonStyle),
-    attr('data-vb-input-style', siteStyleGuide.components.inputStyle),
-    attr('data-vb-card-style', siteStyleGuide.components.cardStyle),
-    attr('data-vb-table-style', siteStyleGuide.components.tableStyle),
-  ].join(' ');
+  const pageTitle =
+    title || siteStyleGuide.chrome.siteTitle || 'Vibes Browser Session';
 
   return `<!doctype html>
 <html lang="en">
@@ -808,102 +796,47 @@ function buildSiteShellDocument({ title, siteStyleGuide, pageHtml }) {
 ${buildShellCss(siteStyleGuide)}
     </style>
   </head>
-  <body ${dataAttrs}>
-    <div data-vb-shell="site">
-      <header data-vb-shell="header">
-        <div class="vb-shell-bar">
-          <a class="vb-brand" href="/">
-            <span class="vb-brand-title">${escapeHtml(chromeTitle)}</span>
-            ${tagline ? `<span class="vb-brand-tagline">${escapeHtml(tagline)}</span>` : ''}
-          </a>
-        </div>
-      </header>
-      <main data-vb-main="true">
-        <div data-vb-page="true">${pageHtml}</div>
-      </main>
-      <footer data-vb-shell="footer">
-        <p>${escapeHtml(footerTone)}</p>
-      </footer>
-    </div>
+  <body>
+    <main data-vb-main="true">
+      <div data-vb-page="true">${pageHtml}</div>
+    </main>
   </body>
 </html>`;
 }
 
 function buildShellCss(siteStyleGuide) {
   const palette = siteStyleGuide.palette;
-  return `      :root {
-        --vb-page-bg: ${safeCssValue(palette.pageBg)};
-        --vb-panel-bg: ${safeCssValue(palette.panelBg)};
-        --vb-panel-alt-bg: ${safeCssValue(palette.panelAltBg)};
-        --vb-text: ${safeCssValue(palette.text)};
-        --vb-muted: ${safeCssValue(palette.mutedText)};
-        --vb-accent: ${safeCssValue(palette.accent)};
-        --vb-accent-alt: ${safeCssValue(palette.accentAlt)};
-        --vb-border: ${safeCssValue(palette.border)};
-        --vb-body-font: ${fontStack(siteStyleGuide.typography.bodyStack)};
-        --vb-display-font: ${fontStack(siteStyleGuide.typography.displayStack)};
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; }
+  return `      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
       body {
-        min-height: 100vh;
-        background: var(--vb-page-bg);
-        color: var(--vb-text);
-        font-family: var(--vb-body-font);
-        line-height: 1.45;
+        background: ${safeCssValue(palette.pageBg) || '#f4f4f4'};
+        color: ${safeCssValue(palette.text) || '#222'};
+        font-family: Verdana, Geneva, sans-serif;
+        font-size: 0.92rem;
+        line-height: 1.5;
       }
-      a { color: var(--vb-accent); }
+      a { color: ${safeCssValue(palette.accent) || '#0645ad'}; }
+      a:visited { color: ${safeCssValue(palette.accentAlt) || '#551a8b'}; }
       img, svg, iframe { max-width: 100%; }
-      [data-vb-shell="site"] { min-height: 100vh; }
-      .vb-shell-bar, [data-vb-main="true"], [data-vb-shell="footer"] {
-        width: min(72rem, calc(100vw - 2rem));
-        margin: 0 auto;
-      }
-      [data-vb-shell="header"] {
-        border-bottom: 1px solid var(--vb-border);
-        background: color-mix(in srgb, var(--vb-panel-alt-bg) 84%, white 16%);
-      }
-      .vb-shell-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        padding: 1rem 0;
-      }
-      .vb-brand {
-        display: inline-flex;
-        flex-direction: column;
-        gap: 0.15rem;
-        text-decoration: none;
-        color: inherit;
-      }
-      .vb-brand-title {
-        font-family: var(--vb-display-font);
-        font-size: 1.35rem;
-        font-weight: 800;
-        letter-spacing: 0.02em;
-      }
-      .vb-brand-tagline {
-        color: var(--vb-muted);
-        font-size: 0.88rem;
-      }
       [data-vb-main="true"] {
-        padding: 1.1rem 0 2.4rem;
+        max-width: 48rem;
+        margin: 1rem auto;
+        padding: 0 0.8rem;
       }
       [data-vb-page="true"] {
-        background: var(--vb-panel-bg);
-        border: 1px solid var(--vb-border);
-        border-radius: ${cardRadius(siteStyleGuide.components.cardStyle)};
-        box-shadow: ${cardShadow(siteStyleGuide.components.cardStyle)};
-        padding: ${pagePadding(siteStyleGuide.typography.density)};
+        background: ${safeCssValue(palette.panelBg) || '#fff'};
+        border: 1px solid ${safeCssValue(palette.border) || '#999'};
+        padding: 1rem 1.25rem;
+        box-shadow: 2px 2px 0 #ccc;
       }
       [data-vb-page="true"] h1,
       [data-vb-page="true"] h2,
       [data-vb-page="true"] h3 {
-        font-family: var(--vb-display-font);
-        margin: 0 0 0.8rem;
-        ${headingCss(siteStyleGuide.typography.headingTreatment)}
+        margin: 0.6rem 0 0.5rem;
       }
+      [data-vb-page="true"] h1 { font-size: 1.5rem; }
+      [data-vb-page="true"] h2 { font-size: 1.2rem; }
+      [data-vb-page="true"] h3 { font-size: 1.05rem; }
       [data-vb-page="true"] p,
       [data-vb-page="true"] ul,
       [data-vb-page="true"] ol,
@@ -912,23 +845,12 @@ function buildShellCss(siteStyleGuide) {
       [data-vb-page="true"] section,
       [data-vb-page="true"] article,
       [data-vb-page="true"] nav {
-        margin: 0 0 ${stackGap(siteStyleGuide.typography.density)};
+        margin: 0 0 0.8rem;
       }
-      [data-vb-page="true"] section,
-      [data-vb-page="true"] article,
-      [data-vb-page="true"] aside,
-      [data-vb-page="true"] .card {
-        background: ${cardBackground(siteStyleGuide.components.cardStyle)};
-        border: ${cardBorder(siteStyleGuide.components.cardStyle)};
-        border-radius: ${cardRadius(siteStyleGuide.components.cardStyle)};
-        box-shadow: ${cardShadow(siteStyleGuide.components.cardStyle)};
-        padding: ${cardPadding(siteStyleGuide.typography.density)};
-      }
-      [data-vb-page="true"] nav a {
-        display: inline-block;
-        margin: 0 0.5rem 0.5rem 0;
-        text-decoration: none;
-        ${navLinkCss(siteStyleGuide.components.navStyle)}
+      [data-vb-page="true"] hr {
+        border: none;
+        border-top: 1px solid ${safeCssValue(palette.border) || '#999'};
+        margin: 0.8rem 0;
       }
       [data-vb-page="true"] button,
       [data-vb-page="true"] input,
@@ -939,198 +861,48 @@ function buildShellCss(siteStyleGuide) {
       [data-vb-page="true"] button,
       [data-vb-page="true"] input[type="submit"],
       [data-vb-page="true"] input[type="button"] {
-        ${buttonCss(siteStyleGuide.components.buttonStyle)}
+        padding: 0.35rem 0.8rem;
+        border: 1px solid #333;
+        background: #e6e6e6;
+        cursor: pointer;
       }
       [data-vb-page="true"] input:not([type="submit"]):not([type="button"]),
       [data-vb-page="true"] textarea,
       [data-vb-page="true"] select {
         width: 100%;
-        ${inputCss(siteStyleGuide.components.inputStyle)}
+        padding: 0.4rem;
+        border: 1px solid #666;
       }
       [data-vb-page="true"] label {
         display: block;
         font-weight: 700;
-        margin-bottom: 0.4rem;
+        margin-bottom: 0.3rem;
       }
       [data-vb-page="true"] table {
         width: 100%;
         border-collapse: collapse;
-        ${tableCss(siteStyleGuide.components.tableStyle)}
+        border: 1px solid ${safeCssValue(palette.border) || '#999'};
       }
       [data-vb-page="true"] th,
       [data-vb-page="true"] td {
-        padding: 0.55rem 0.7rem;
+        padding: 0.3rem 0.5rem;
+        border: 1px solid ${safeCssValue(palette.border) || '#999'};
+        text-align: left;
       }
-      [data-vb-shell="footer"] {
-        border-top: 1px solid var(--vb-border);
-        color: var(--vb-muted);
-        padding: 0.8rem 0 1.6rem;
-        font-size: 0.88rem;
+      [data-vb-page="true"] th {
+        background: ${safeCssValue(palette.panelAltBg) || '#e8e8e8'};
       }
       @media (max-width: 720px) {
-        .vb-shell-bar, [data-vb-main="true"], [data-vb-shell="footer"] {
-          width: calc(100vw - 1.2rem);
-        }
-        [data-vb-page="true"] {
-          padding: 1rem;
+        [data-vb-main="true"] {
+          padding: 0 0.5rem;
         }
       }`;
-}
-
-function attr(name, value) {
-  return `${name}="${escapeHtml(String(value ?? ''))}"`;
 }
 
 function safeCssValue(value) {
   return String(value ?? '')
     .replace(/[;\n\r{}]/gu, '')
     .trim();
-}
-
-function fontStack(kind) {
-  switch (kind) {
-    case 'serif':
-      return `"Georgia", "Times New Roman", serif`;
-    case 'mono':
-      return `"Courier New", "Liberation Mono", monospace`;
-    case 'humanist':
-      return `"Trebuchet MS", "Gill Sans", "Helvetica Neue", sans-serif`;
-    case 'sans':
-    default:
-      return `"Verdana", "Geneva", sans-serif`;
-  }
-}
-
-function headingCss(kind) {
-  switch (kind) {
-    case 'caps':
-      return 'text-transform: uppercase; letter-spacing: 0.08em;';
-    case 'poster':
-      return 'font-weight: 900; letter-spacing: -0.03em;';
-    case 'plain':
-    default:
-      return 'font-weight: 800;';
-  }
-}
-
-function pagePadding(density) {
-  switch (density) {
-    case 'compact':
-      return '1rem';
-    case 'roomy':
-      return '1.7rem';
-    case 'standard':
-    default:
-      return '1.35rem';
-  }
-}
-
-function cardPadding(density) {
-  switch (density) {
-    case 'compact':
-      return '0.85rem';
-    case 'roomy':
-      return '1.2rem';
-    case 'standard':
-    default:
-      return '1rem';
-  }
-}
-
-function stackGap(density) {
-  switch (density) {
-    case 'compact':
-      return '0.85rem';
-    case 'roomy':
-      return '1.35rem';
-    case 'standard':
-    default:
-      return '1rem';
-  }
-}
-
-function cardRadius(style) {
-  switch (style) {
-    case 'lifted':
-      return '18px';
-    case 'filled':
-      return '14px';
-    case 'bordered':
-    default:
-      return '10px';
-  }
-}
-
-function cardShadow(style) {
-  switch (style) {
-    case 'lifted':
-      return '0 14px 28px rgba(0,0,0,0.12)';
-    case 'filled':
-      return '0 6px 14px rgba(0,0,0,0.08)';
-    case 'bordered':
-    default:
-      return 'none';
-  }
-}
-
-function cardBackground(style) {
-  return style === 'filled'
-    ? 'var(--vb-panel-alt-bg)'
-    : 'color-mix(in srgb, var(--vb-panel-bg) 92%, white 8%)';
-}
-
-function cardBorder(style) {
-  return style === 'lifted'
-    ? '1px solid color-mix(in srgb, var(--vb-border) 82%, white 18%)'
-    : '1px solid var(--vb-border)';
-}
-
-function navLinkCss(style) {
-  switch (style) {
-    case 'tabs':
-      return 'padding: 0.45rem 0.7rem; border: 1px solid var(--vb-border); border-bottom-width: 3px; background: var(--vb-panel-alt-bg);';
-    case 'underline':
-      return 'padding: 0.2rem 0; border-bottom: 2px solid var(--vb-accent);';
-    case 'pills':
-    default:
-      return 'padding: 0.42rem 0.72rem; border: 1px solid var(--vb-border); border-radius: 999px; background: var(--vb-panel-alt-bg);';
-  }
-}
-
-function buttonCss(style) {
-  switch (style) {
-    case 'outline':
-      return 'display:inline-flex;align-items:center;justify-content:center;padding:0.55rem 0.9rem;border:1px solid var(--vb-accent);background:transparent;color:var(--vb-accent);cursor:pointer;';
-    case 'soft':
-      return 'display:inline-flex;align-items:center;justify-content:center;padding:0.55rem 0.9rem;border:1px solid var(--vb-border);background:var(--vb-panel-alt-bg);color:var(--vb-text);cursor:pointer;';
-    case 'solid':
-    default:
-      return 'display:inline-flex;align-items:center;justify-content:center;padding:0.55rem 0.9rem;border:1px solid var(--vb-accent);background:var(--vb-accent);color:#fff;cursor:pointer;';
-  }
-}
-
-function inputCss(style) {
-  switch (style) {
-    case 'underline':
-      return 'padding:0.45rem 0.2rem;border:0;border-bottom:2px solid var(--vb-border);background:transparent;color:inherit;';
-    case 'soft':
-      return 'padding:0.6rem 0.75rem;border:1px solid transparent;border-radius:10px;background:var(--vb-panel-alt-bg);color:inherit;';
-    case 'boxed':
-    default:
-      return 'padding:0.6rem 0.75rem;border:1px solid var(--vb-border);border-radius:8px;background:#fff;color:inherit;';
-  }
-}
-
-function tableCss(style) {
-  switch (style) {
-    case 'plain':
-      return 'border: 0;';
-    case 'lined':
-      return 'border-top: 1px solid var(--vb-border); border-bottom: 1px solid var(--vb-border);';
-    case 'grid':
-    default:
-      return 'border: 1px solid var(--vb-border);';
-  }
 }
 
 function escapeHtml(value) {

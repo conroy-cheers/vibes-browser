@@ -148,7 +148,7 @@ test('renderer requests are stateless and return raw HTML text', async () => {
   assert.equal(payloads[0].store, false);
   assert.equal(payloads[0].conversation, undefined);
   assert.equal(payloads[0].text.verbosity, 'low');
-  assert.equal(payloads[0].reasoning, undefined);
+  assert.equal(payloads[0].reasoning.effort, 'low');
   assert.equal(payloads[0].max_output_tokens, DEFAULTS.rendererMaxOutputTokens);
   assert.match(payloads[0].prompt_cache_key, /^vb:/u);
 });
